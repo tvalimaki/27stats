@@ -2,8 +2,6 @@ import os
 import argparse
 import pandas as pd
 import numpy as np
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
 from pandas.api.types import CategoricalDtype
 import matplotlib
 from sys import platform
@@ -45,6 +43,9 @@ def crawl(username):
     Args:
         username (str): Name of user
     """
+    from scrapy.crawler import CrawlerProcess
+    from scrapy.utils.project import get_project_settings
+
     process = CrawlerProcess(get_project_settings())
     process.crawl('27crags', user=username)
     process.start()
@@ -72,8 +73,14 @@ def create_plot(data, xticks, ylim, **kwargs):
     left = np.zeros(len(gradeType.categories),)
 
     for name, df in a.groupby('ascent_style'):
-        marg.barh(df.grade.cat.codes, df.route, left=left[df.grade.cat.codes])
+        marg.barh(df.grade.cat.codes, df.route, left=left[df.grade.cat.codes],
+                  linewidth=0)
         left[df.grade.cat.codes] += df.route
+
+    for grade in np.unique(data.grade.cat.codes):
+        marg.text(left[grade], grade, ' %d' % left[grade], color='C0',
+                  verticalalignment='center', horizontalalignment='left',
+                  fontsize=8)
 
     marg.axis('off')
 
@@ -124,6 +131,9 @@ def visualize(ticks):
 
     Args:
         ticks (DataFrame): The preprocessed tick list
+
+    Returns:
+        tuple: The produced matplotlib figures
     """
     xticks = pd.date_range(start='1/1/%s' % ticks.date.iloc[0].year,
                            end='1/1/%s' % str(ticks.date.iloc[-1].year+1),
@@ -155,10 +165,11 @@ def visualize(ticks):
     ax.legend(handles[:-5:-1] + [line], labels[:-5:-1] + ['Top 10 avg.'],
               bbox_to_anchor=(-0.07, 1), loc=1, borderaxespad=0.)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.87)
+    plt.subplots_adjust(top=0.87, right=0.97)
 
     # plot by ascent type
-    g2 = sns.FacetGrid(ticks, col='type', dropna=False)
+    ticks_type = ticks[ticks.type.isin(['Boulder', 'Sport', 'Traditional'])]
+    g2 = sns.FacetGrid(ticks_type, col='type', dropna=False)
     g2.map_dataframe(create_plot, ylim=ylim, xticks=xticks)
     g2.set_titles('{col_name}')
     g2.set_xticklabels(rotation=45)
@@ -167,18 +178,19 @@ def visualize(ticks):
     t.set_color(titleSpec['color'])
     g2.fig.set_size_inches(10, 3.5)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.77)
+    plt.subplots_adjust(top=0.77, right=0.97)
 
     # plot summary
     stats = {
         'Ascents total': ticks.shape[0],
         'Crags visited': len(ticks.crag.unique()),
+        'Countries visited': len(ticks.country.unique()),
         'Days out': len(ticks.date.unique()),
         'FA': sum(ticks.ascent_type == 'FA'),
         '2nd': sum(ticks.ascent_type == '2nd'),
     }
 
-    fig, ax = plt.subplots(1, 3, figsize=(10, 2))
+    fig, ax = plt.subplots(1, 3, figsize=(10, 1.7))
     ax[0].text(0, 1, 'HIGHLIGHTS', titleSpec,
                verticalalignment='top', transform=ax[0].transAxes)
     ax[0].text(0, 0.8, "\n".join(stats.keys()), verticalalignment='top',
@@ -189,7 +201,8 @@ def visualize(ticks):
 
     types = ticks.groupby('type')['route'].count()
     _, _, a = ax[1].pie(types.values, labels=types.index, autopct='%1.f%%',
-                        startangle=90, counterclock=False)
+                        startangle=90, counterclock=False,
+                        wedgeprops={'linewidth': 0})
     for t in a:
         t.set_color('white')
     ax[1].axis('equal')
@@ -201,14 +214,67 @@ def visualize(ticks):
                         colors=['C{}'.format(c)
                                 for c in style.index[style.values > 0].codes],
                         autopct='%1.f%%',
-                        startangle=90, counterclock=False)
+                        startangle=90, counterclock=False,
+                        wedgeprops={'linewidth': 0})
     for t in a:
         t.set_color('white')
     ax[2].axis('equal')
 
     plt.tight_layout()
+    plt.subplots_adjust(bottom=0.03)
 
     return title, g.fig, g2.fig, fig
+
+
+def visualize_map(ticks):
+    """Visualize the crag locations on a world map
+
+    Args:
+        ticks (DataFrame): Preprocessed ticklist data
+
+    Returns:
+        Figure: The produced matplotlib figure
+    """
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+
+    # plot the world map
+    map_crs = ccrs.AlbersEqualArea()
+    fig, ax = plt.subplots(1, 1, figsize=(10, 3),
+                           subplot_kw={'projection': map_crs})
+    ax.add_feature(cfeature.LAND, facecolor='C0')
+    ax.add_feature(cfeature.BORDERS, edgecolor='white', alpha=0.4)
+
+    ax.outline_patch.set_visible(False)
+    ax.gridlines()
+
+    # plot ascents as a scatterplot where more ascents at the same crag
+    # produces a bigger blob
+    db = ticks.pivot_table(index=['lat', 'lon'], values='route',
+                           aggfunc='count').reset_index()
+
+    sns.scatterplot(data=db, x='lon', y='lat', alpha=0.5, color='C1',
+                    size='route', sizes=(20, 200), ax=ax, legend=False,
+                    transform=ccrs.Geodetic())
+
+    # set the viewlimits of the map to match the figure aspect ratio
+    top = 0.9
+    left = 0.03
+    right = 0.97
+    bottom = 0.15
+    size = fig.get_size_inches()
+    width = (right - left)*size[0]
+    height = (top - bottom)*size[1]
+
+    old_width = ax.viewLim.width
+    new_width = ax.viewLim.height*width/height
+    width_change = new_width - old_width
+    ax.viewLim.x0 = ax.viewLim.x0 - width_change/2.
+    ax.viewLim.x1 = ax.viewLim.x1 + width_change/2.
+
+    plt.subplots_adjust(top=top, left=left, right=right, bottom=bottom)
+
+    return fig
 
 
 def preprocess_data(file):
@@ -244,6 +310,8 @@ def main():
                         help='force crawl even if tick list exists')
     parser.add_argument('-s', '--save', action='store_true',
                         help='save figures to disk')
+    parser.add_argument('-m', '--map', action='store_true',
+                        help='plot ascents on a world map')
     args = parser.parse_args()
 
     file = './%s.csv' % args.username
@@ -254,6 +322,9 @@ def main():
 
     data = preprocess_data(file)
     fig = visualize(data)
+
+    if args.map:
+        fig += (visualize_map(data),)
 
     if args.save:
         from PIL import Image

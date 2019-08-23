@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from scrapy.spiders import Spider
 from scrapy.http import Request
+import re
 
 
 class CragSpider(Spider):
@@ -23,7 +24,7 @@ class CragSpider(Spider):
             else:
                 ascent_type = ''
                 ascent_style = ascent[0]
-            yield {
+            route_info = {
                 'date': row.css('.ascent-date::text').extract_first().strip(),
                 'route': route,
                 'stars': len(row.css('div.star').extract()),
@@ -34,3 +35,29 @@ class CragSpider(Spider):
                 'ascent_style': ascent_style,
                 'ascent_type': ascent_type,
             }
+            crag_link = row.css('.stxt a::attr(href)').extract()[1]
+            crag_map = response.urljoin(crag_link) + '/cragmap'
+            req = Request(crag_map, callback=self.parse_crag, dont_filter=True)
+            req.meta['route_info'] = route_info
+            yield req
+
+    def parse_crag(self, response):
+        route_info = response.meta.get('route_info')
+        crag_location = response.css('.craglocation a::text').extract_first()
+        if crag_location:
+            crag_location = crag_location.split(',', 1)
+            country = crag_location[-1].strip()
+            area = crag_location[0].replace('in the area of ', '')
+            route_info['country'] = country
+            route_info['area'] = area
+            m = re.search('"map":{"latitude":"([-.0-9]+)","longitude":"([-.0-9]+)"',
+                          response.text)
+            if m:
+                route_info['lat'] = m.group(1)
+                route_info['lon'] = m.group(2)
+        else:
+            route_info['country'] = ''
+            route_info['area'] = ''
+            route_info['lat'] = ''
+            route_info['lon'] = ''
+        yield route_info

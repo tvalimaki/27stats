@@ -4,6 +4,15 @@ A set of tools to scrape and visualize a user's tick list from [27 Crags](https:
 
 ![A climbing odyssey](a_climbing_odyssey.png)
 
+## Requirements
+
+27 Stats depends on [Cartopy](https://scitools.org.uk/cartopy/docs/latest/index.html). Cartopy itself is installed when running the commands in the next section, but its own dependencies are not. These include atleast:
+
+- [GEOS](https://trac.osgeo.org/geos/), and
+- [PROJ](https://proj4.org/)
+
+Refer to the original instructions to install.
+
 ## Installation
 
 Install to a virtual environment using virtualenvwrapper.
