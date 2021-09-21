@@ -4,14 +4,9 @@ import pandas as pd
 import numpy as np
 from pandas.api.types import CategoricalDtype
 import matplotlib
-from sys import platform
 from scipy.interpolate import interp1d
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-
-# Use TkAgg backend on MacOS
-if platform == "darwin":
-    matplotlib.use('TkAgg')
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -93,6 +88,7 @@ def create_plot(data, xticks, ylim, **kwargs):
 
     # plot interpolation of yearly top10
     for name, df in top10.groupby('ascent_style'):
+        df.dropna(inplace=True)
         if len(df) < 2:
             continue
         if len(df) == 2:
@@ -118,7 +114,9 @@ def create_plot(data, xticks, ylim, **kwargs):
     xtick_loc = [d.toordinal() for d in xticks]
     ax.set_xlim((xtick_loc[0], xtick_loc[-1]))
     ax.set_xticks(xtick_loc)
-    ax.set_xticklabels(xticks.year)
+    ticklabels = list(xticks.year.values)
+    ticklabels[-1] = ''
+    ax.set_xticklabels(ticklabels)
     ax.xaxis.grid(False)
 
     ax.invert_yaxis()
@@ -245,7 +243,7 @@ def visualize_map(ticks):
     ax.add_feature(cfeature.LAND, facecolor='C0')
     ax.add_feature(cfeature.BORDERS, edgecolor='white', alpha=0.4)
 
-    ax.outline_patch.set_visible(False)
+    ax.spines['geo'].set_visible(False)
     ax.gridlines()
 
     # plot ascents as a scatterplot where more ascents at the same crag
@@ -255,7 +253,7 @@ def visualize_map(ticks):
 
     sns.scatterplot(data=db, x='lon', y='lat', alpha=0.5, color='C1',
                     size='route', sizes=(20, 200), ax=ax, legend=False,
-                    transform=ccrs.Geodetic())
+                    transform=ccrs.PlateCarree())
 
     # set the viewlimits of the map to match the figure aspect ratio
     top = 0.9
@@ -330,7 +328,7 @@ def main():
         from PIL import Image
 
         for i, f in enumerate(fig):
-            f.savefig('fig{}.png'.format(i))
+            f.savefig('fig{}.png'.format(i), dpi=300)
         img = []
         for i in range(i+1):
             img.append(Image.open('fig{}.png'.format(i)))
